@@ -40,6 +40,8 @@ $ wget https://s3.eu-central-1.amazonaws.com/avg-kitti/raw_data/2011_09_26_calib
 $ unzip 2011_09_26_drive_0002_sync.zip
 $ unzip 2011_09_26_calib.zip
 $ kitti2bag -t 2011_09_26 -r 0002 raw_synced .
+# Supports unsynced 
+# kitti2bag -t 2011_09_26 -r 0002 raw_unsynced
 Exporting static transformations
 Exporting time dependent transformations
 Exporting IMU

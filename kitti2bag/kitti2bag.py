@@ -152,7 +152,7 @@ def save_camera_data(bag, kitti_type, kitti, util, bridge, camera, camera_frame_
         bag.write(topic + topic_ext, image_message, t = image_message.header.stamp)
         bag.write(topic + '/camera_info', calib, t = calib.header.stamp) 
         
-def save_velo_data(bag, kitti, velo_frame_id, topic):
+def save_velo_data(bag, kitti, velo_frame_id, topic, synced_dataset=True):
     print("Exporting velodyne data")
     velo_path = os.path.join(kitti.data_path, 'velodyne_points')
     velo_data_dir = os.path.join(velo_path, 'data')
@@ -175,7 +175,10 @@ def save_velo_data(bag, kitti, velo_frame_id, topic):
         velo_filename = os.path.join(velo_data_dir, filename)
 
         # read binary data
-        scan = (np.fromfile(velo_filename, dtype=np.float32)).reshape(-1, 4)
+        if synced_dataset:
+            scan = (np.fromfile(velo_filename, dtype=np.float32)).reshape(-1, 4)
+        else:
+            scan = (np.loadtxt(velo_filename, dtype=np.float32)).reshape(-1, 4)
 
         # create header
         header = Header()
@@ -261,7 +264,7 @@ def save_gps_vel_data(bag, kitti, gps_frame_id, topic):
 def run_kitti2bag():
     parser = argparse.ArgumentParser(description = "Convert KITTI dataset to ROS bag file the easy way!")
     # Accepted argument values
-    kitti_types = ["raw_synced", "odom_color", "odom_gray"]
+    kitti_types = ["raw_synced", "raw_unsynced", "odom_color", "odom_gray"]
     odometry_sequences = []
     for s in range(22):
         odometry_sequences.append(str(s).zfill(2))
@@ -287,7 +290,7 @@ def run_kitti2bag():
     ]
 
     if args.kitti_type.find("raw") != -1:
-    
+        
         if args.date == None:
             print("Date option is not given. It is mandatory for raw dataset.")
             print("Usage for raw dataset: kitti2bag raw_synced [dir] -t <date> -r <drive>")
@@ -298,7 +301,15 @@ def run_kitti2bag():
             sys.exit(1)
         
         bag = rosbag.Bag("kitti_{}_drive_{}_{}.bag".format(args.date, args.drive, args.kitti_type[4:]), 'w', compression=compression)
-        kitti = pykitti.raw(args.dir, args.date, args.drive)
+
+        synced_dataset = True
+
+        if args.kitti_type.find("_synced") != -1:
+            kitti = pykitti.raw(args.dir, args.date, args.drive)
+        elif args.kitti_type.find("_unsynced") != -1:
+            kitti = pykitti.raw(args.dir, args.date, args.drive, dataset="extract")
+            synced_dataset = False
+
         if not os.path.exists(kitti.data_path):
             print('Path {} does not exists. Exiting.'.format(kitti.data_path))
             sys.exit(1)
@@ -308,6 +319,8 @@ def run_kitti2bag():
             sys.exit(1)
 
         try:
+            # Calibration 
+
             # IMU
             imu_frame_id = 'imu_link'
             imu_topic = '/kitti/oxts/imu'
@@ -339,7 +352,7 @@ def run_kitti2bag():
             save_gps_vel_data(bag, kitti, imu_frame_id, gps_vel_topic)
             for camera in cameras:
                 save_camera_data(bag, args.kitti_type, kitti, util, bridge, camera=camera[0], camera_frame_id=camera[1], topic=camera[2], initial_time=None)
-            save_velo_data(bag, kitti, velo_frame_id, velo_topic)
+            save_velo_data(bag, kitti, velo_frame_id, velo_topic, synced_dataset=synced_dataset)
 
         finally:
             print("## OVERVIEW ##")
