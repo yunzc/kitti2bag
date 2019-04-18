@@ -27,7 +27,11 @@ import argparse
 
 def save_imu_data(bag, kitti, imu_frame_id, topic):
     print("Exporting IMU")
-    for timestamp, oxts in zip(kitti.timestamps, kitti.oxts):
+    # sort the data according to timestamps 
+    timestamp_oxts_zipped = zip(kitti.timestamps, kitti.oxts)
+    timestamp_oxts_zipped.sort(key = lambda x: x[0])
+
+    for timestamp, oxts in timestamp_oxts_zipped:
         q = tf.transformations.quaternion_from_euler(oxts.packet.roll, oxts.packet.pitch, oxts.packet.yaw)
         imu = Imu()
         imu.header.frame_id = imu_frame_id
@@ -44,11 +48,14 @@ def save_imu_data(bag, kitti, imu_frame_id, topic):
         imu.angular_velocity.z = oxts.packet.wu
         bag.write(topic, imu, t=imu.header.stamp)
 
-
 def save_dynamic_tf(bag, kitti, kitti_type, initial_time):
     print("Exporting time dependent transformations")
+    # sort the data according to timestamps 
+    timestamp_oxts_zipped = zip(kitti.timestamps, kitti.oxts)
+    timestamp_oxts_zipped.sort(key = lambda x: x[0])
+
     if kitti_type.find("raw") != -1:
-        for timestamp, oxts in zip(kitti.timestamps, kitti.oxts):
+        for timestamp, oxts in timestamp_oxts_zipped:
             tf_oxts_msg = TFMessage()
             tf_oxts_transform = TransformStamped()
             tf_oxts_transform.header.stamp = rospy.Time.from_sec(float(timestamp.strftime("%s.%f")))
@@ -132,6 +139,9 @@ def save_camera_data(bag, kitti_type, kitti, util, bridge, camera, camera_frame_
         calib.P = util['P{}'.format(camera_pad)]
     
     iterable = zip(image_datetimes, image_filenames)
+    # sort the data according to timestamps 
+    iterable.sort(key = lambda x: x[0])
+
     bar = progressbar.ProgressBar()
     for dt, filename in bar(iterable):
         image_filename = os.path.join(image_path, filename)
