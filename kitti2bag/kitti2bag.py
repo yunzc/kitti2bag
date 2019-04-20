@@ -16,7 +16,7 @@ import rospy
 import rosbag
 import progressbar
 from tf2_msgs.msg import TFMessage
-from datetime import datetime
+import time
 from std_msgs.msg import Header
 from sensor_msgs.msg import CameraInfo, Imu, PointField, NavSatFix
 import sensor_msgs.point_cloud2 as pcl2
@@ -35,7 +35,7 @@ def save_imu_data(bag, kitti, imu_frame_id, topic):
         q = tf.transformations.quaternion_from_euler(oxts.packet.roll, oxts.packet.pitch, oxts.packet.yaw)
         imu = Imu()
         imu.header.frame_id = imu_frame_id
-        imu.header.stamp = rospy.Time.from_sec(float(timestamp.strftime("%s.%f")))
+        imu.header.stamp = rospy.Time.from_sec(timestamp.toSeconds())
         imu.orientation.x = q[0]
         imu.orientation.y = q[1]
         imu.orientation.z = q[2]
@@ -58,7 +58,7 @@ def save_dynamic_tf(bag, kitti, kitti_type, initial_time):
         for timestamp, oxts in timestamp_oxts_zipped:
             tf_oxts_msg = TFMessage()
             tf_oxts_transform = TransformStamped()
-            tf_oxts_transform.header.stamp = rospy.Time.from_sec(float(timestamp.strftime("%s.%f")))
+            tf_oxts_transform.header.stamp = rospy.Time.from_sec(timestamp.toSeconds())
             tf_oxts_transform.header.frame_id = 'world'
             tf_oxts_transform.child_frame_id = 'base_link'
 
@@ -117,16 +117,23 @@ def save_camera_data(bag, kitti_type, kitti, util, bridge, camera, camera_frame_
         image_path = os.path.join(image_dir, 'data')
         image_filenames = sorted(os.listdir(image_path))
         with open(os.path.join(image_dir, 'timestamps.txt')) as f:
-            image_datetimes = map(lambda x: datetime.strptime(x[:-4], '%Y-%m-%d %H:%M:%S.%f'), f.readlines())
+            image_datetimes = map(lambda x: pykitti.datetime.Datetime(x[:-1]), f.readlines())
         
         calib = CameraInfo()
         calib.header.frame_id = camera_frame_id
-        calib.width, calib.height = tuple(util['S_rect_{}'.format(camera_pad)].tolist())
-        calib.distortion_model = 'plumb_bob'
-        calib.K = util['K_{}'.format(camera_pad)]
-        calib.R = util['R_rect_{}'.format(camera_pad)]
-        calib.D = util['D_{}'.format(camera_pad)]
-        calib.P = util['P_rect_{}'.format(camera_pad)]
+        if kitti_type.find("_synced"):
+            calib.width, calib.height = tuple(util['S_rect_{}'.format(camera_pad)].tolist())
+            calib.distortion_model = 'plumb_bob'
+            calib.K = util['K_{}'.format(camera_pad)]
+            calib.R = util['R_rect_{}'.format(camera_pad)]
+            calib.D = util['D_{}'.format(camera_pad)]
+            calib.P = util['P_rect_{}'.format(camera_pad)]
+        elif kitti_type.find("_unsynced"):
+            calib.width, calib.height = tuple(util['S_{}'.format(camera_pad)].tolist())
+            calib.distortion_model = 'plumb_bob'
+            calib.K = util['K_{}'.format(camera_pad)]
+            calib.R = util['R_{}'.format(camera_pad)]
+            calib.D = util['D_{}'.format(camera_pad)]
             
     elif kitti_type.find("odom") != -1:
         camera_pad = '{0:01d}'.format(camera)
@@ -153,7 +160,7 @@ def save_camera_data(bag, kitti_type, kitti, util, bridge, camera, camera_frame_
         image_message = bridge.cv2_to_imgmsg(cv_image, encoding=encoding)
         image_message.header.frame_id = camera_frame_id
         if kitti_type.find("raw") != -1:
-            image_message.header.stamp = rospy.Time.from_sec(float(datetime.strftime(dt, "%s.%f")))
+            image_message.header.stamp = rospy.Time.from_sec(dt.toSeconds())
             topic_ext = "/image_raw"
         elif kitti_type.find("odom") != -1:
             image_message.header.stamp = rospy.Time.from_sec(dt)
@@ -173,7 +180,7 @@ def save_velo_data(bag, kitti, velo_frame_id, topic, synced_dataset=True):
         for line in lines:
             if len(line) == 1:
                 continue
-            dt = datetime.strptime(line[:-4], '%Y-%m-%d %H:%M:%S.%f')
+            dt = pykitti.datetime.Datetime(line[:-1])
             velo_datetimes.append(dt)
 
     iterable = zip(velo_datetimes, velo_filenames)
@@ -193,7 +200,7 @@ def save_velo_data(bag, kitti, velo_frame_id, topic, synced_dataset=True):
         # create header
         header = Header()
         header.frame_id = velo_frame_id
-        header.stamp = rospy.Time.from_sec(float(datetime.strftime(dt, "%s.%f")))
+        header.stamp = rospy.Time.from_sec(dt.toSeconds())
 
         # fill pcl msg
         fields = [PointField('x', 0, PointField.FLOAT32, 1),
@@ -239,7 +246,7 @@ def save_static_transforms(bag, transforms, timestamps):
         t = get_static_transform(from_frame_id=transform[0], to_frame_id=transform[1], transform=transform[2])
         tfm.transforms.append(t)
     for timestamp in timestamps:
-        time = rospy.Time.from_sec(float(timestamp.strftime("%s.%f")))
+        time = rospy.Time.from_sec(timestamp.toSeconds())
         for i in range(len(tfm.transforms)):
             tfm.transforms[i].header.stamp = time
         bag.write('/tf_static', tfm, t=time)
@@ -249,7 +256,7 @@ def save_gps_fix_data(bag, kitti, gps_frame_id, topic):
     for timestamp, oxts in zip(kitti.timestamps, kitti.oxts):
         navsatfix_msg = NavSatFix()
         navsatfix_msg.header.frame_id = gps_frame_id
-        navsatfix_msg.header.stamp = rospy.Time.from_sec(float(timestamp.strftime("%s.%f")))
+        navsatfix_msg.header.stamp = rospy.Time.from_sec(timestamp.toSeconds())
         navsatfix_msg.latitude = oxts.packet.lat
         navsatfix_msg.longitude = oxts.packet.lon
         navsatfix_msg.altitude = oxts.packet.alt
@@ -261,7 +268,7 @@ def save_gps_vel_data(bag, kitti, gps_frame_id, topic):
     for timestamp, oxts in zip(kitti.timestamps, kitti.oxts):
         twist_msg = TwistStamped()
         twist_msg.header.frame_id = gps_frame_id
-        twist_msg.header.stamp = rospy.Time.from_sec(float(timestamp.strftime("%s.%f")))
+        twist_msg.header.stamp = rospy.Time.from_sec(timestamp.toSeconds())
         twist_msg.twist.linear.x = oxts.packet.vf
         twist_msg.twist.linear.y = oxts.packet.vl
         twist_msg.twist.linear.z = oxts.packet.vu
